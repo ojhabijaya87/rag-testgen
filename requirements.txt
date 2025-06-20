@@ -1,27 +1,10 @@
-# Core RAG & NLP
+streamlit
+transformers
+requests
+pyperclip
+selenium
 langchain
-langchain-core
 langchain-community
 langchain-huggingface
-langchain-chroma
-langchain-ollama
-sentence-transformers
-chromadb>=0.4.0
-pymupdf
-torch
-numpy
-
-# UI
-streamlit
-
-# LLM runtime (local)
-ollama
-
-# Optional utils
-python-dotenv
-tqdm
-rich
-
-# For Notebook development (optional)
-jupyter
-ipykernel
+langchain-core
+faiss-cpu

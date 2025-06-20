@@ -1,0 +1,53 @@
+User Story: TfL Journey Planner Widget
+As a user,
+I want to plan a journey using the Journey Planner widget on the TfL website,
+so that I can view possible routes and travel information between my chosen start and end locations.
+
+Acceptance Criteria
+1. Valid Journey Planning
+
+When I enter valid locations in the "From" and "To" fields using the auto-complete suggestions (e.g., selecting a station, postcode, or address from the dropdown),
+
+And I select a departure or arrival date and time (using the "Leaving" or "Arriving" radio buttons and date/time pickers),
+
+And I click the "Plan my journey" button,
+
+Then I should see a list of journey options with estimated times for each mode (e.g., public transport, walking, cycling) displayed in the results.
+
+2. Edit Preferences
+
+When I have planned a journey and click the "Edit preferences" link or button,
+
+And I select "Routes with least walking" from the "Show me" dropdown in the preferences panel,
+
+And I click "Update journey",
+
+Then the journey results should update, and the new journey time reflecting the least walking route should be displayed.
+
+3. View Station Details
+
+When I click the "View details" link for the destination station in the journey results,
+
+Then I should see complete accessibility and access information for that station, including step-free access, lift availability, and platform access details.
+
+4. Invalid Journey Handling
+
+When I enter one or more invalid locations (e.g., random text or a location not recognized by the auto-complete) in the "From" or "To" fields,
+
+And I click "Plan my journey",
+
+Then the widget should not provide any journey results and should display an error message such as "We could not find the locations you entered. Please check and try again."
+
+5. Empty Field Validation
+
+When I attempt to plan a journey without entering any locations in the "From" and/or "To" fields,
+
+And I click "Plan my journey",
+
+Then the widget should prevent planning and display an error message such as "Please enter a starting point and destination."
+
+References:
+
+Field names and UI elements such as "From location," "To location," "Plan my journey," "Edit preferences," and journey result details are based on the actual [TfL Plan a Journey page].
+
+Error handling and preference options reflect the real options and messages provided by TfL’s widget.
