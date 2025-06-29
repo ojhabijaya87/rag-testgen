@@ -44,7 +44,7 @@ MODEL_CONFIG = {
     },
     "ollama-llama3 (Offline)": {
         "provider": "ollama",
-        "model_name": "llama3:70b-instruct",
+        "model_name": "llama3.1:8b",
         "temperature": 0.3,
         "max_tokens": 8192,
         "top_p": 0.9
@@ -294,12 +294,23 @@ def get_llm(model_name: str):
 
 # ===== UPDATED PROMPT TEMPLATES =====
 STANDARD_PROMPT_TEMPLATE = """
-As an expert QA engineer, generate concise BDD-style test scenarios:
+You are an expert QA engineer.
 
-DOCUMENTATION CONTEXT (Key points only):
+Your task is to generate concise BDD-style test scenarios for the given user story and context.
+
+IMPORTANT:
+- Your output MUST contain ONLY the Gherkin scenarios.
+- Do NOT include any explanation, markdown formatting, headings, code fences, or any extra text.
+- Each scenario must start with: Scenario: <title>
+- Use plain text only.
+- You MUST incorporate information retrieved from the vector database knowledge base. If relevant information exists in the context sections below, USE it to inform your scenarios.
+- Do NOT invent features, functionality, or scenarios that are not supported by the provided context or user story.
+- Only generate test scenarios for the specific test type provided below.
+
+DOCUMENTATION CONTEXT:
 {context}
 
-USER REQUIREMENTS (Summary):
+USER REQUIREMENTS:
 {requirements}
 
 REUSABLE TEST STEPS:
@@ -308,47 +319,37 @@ REUSABLE TEST STEPS:
 CURRENT USER STORY:
 {current_story}
 
-GENERATION RULES:
-- Use strict Gherkin syntax (Background, Scenario, Given/When/Then)
-- Do NOT include the "Feature:" keyword - let users add it where needed
-- Do NOT use step numbers (1., 2., etc.)
-- Create Background for common setup
-- Use Examples tables for data variations
-- All scenarios must start with "Scenario: " followed by descriptive title
-- Use plain language without markdown formatting
-- Separate accessibility tests into their own section
-- Negative scenarios should ONLY contain negative outcomes
-- Positive scenarios should ONLY contain happy paths
+TEST TYPE:
+{test_type_instructions}
 """
 
-TEST_PROMPT = PromptTemplate.from_template(
-    STANDARD_PROMPT_TEMPLATE + "\n\nTEST TYPE FOCUS:\n{test_type_instructions}"
-)
+TEST_PROMPT = PromptTemplate.from_template(STANDARD_PROMPT_TEMPLATE)
 
-# Updated test type instructions with strict separation
+
+
 TEST_TYPE_INSTRUCTIONS = {
     "positive": (
-        "Valid inputs → Success outcomes. Include real data examples. "
-        "Focus on happy path scenarios. Do NOT include accessibility or error handling. "
-        "Do NOT include negative steps. Each scenario must have a clear positive outcome."
+        "Valid inputs → Success outcomes. Include realistic, meaningful examples. "
+        "Focus only on happy path scenarios. Do NOT include accessibility, edge, or negative paths. "
+        "Each scenario must represent a clear, complete success case."
     ),
     "negative": (
-        "Error conditions → Specific error messages. Cover validation failures. "
-        "Include invalid inputs, missing data, and edge cases. "
-        "Do NOT include accessibility tests. Do NOT include positive outcomes. "
-        "Each scenario must end with an error message or negative outcome."
+        "Invalid inputs → Specific error messages. Include validation errors, business rule violations, missing or malformed data. "
+        "Do NOT include accessibility or success outcomes. "
+        "Each scenario must represent a unique and valid failure path."
     ),
     "edge": (
-        "Boundary values → Min/Max cases. Temporal/spatial limits. "
-        "Cover data boundaries, capacity limits, and extreme conditions. "
-        "Do NOT include accessibility tests. Do NOT include positive outcomes."
+        "Extreme and boundary conditions → Max/Min inputs, empty values, large payloads, timeout, or unusual sequences. "
+        "Do NOT include accessibility or generic negative scenarios. "
+        "Each case should challenge system stability or limits."
     ),
     "accessibility": (
-        "WCAG 2.1 AA compliance: Keyboard nav, screen readers, contrast, labels. "
-        "Format as BDD scenarios. Do NOT include the Feature keyword. "
-        "Focus ONLY on accessibility aspects. Do NOT include functional test steps."
+        "Accessibility criteria based on WCAG 2.1 AA: Keyboard navigation, screen reader labels, contrast ratio, alt text, ARIA. "
+        "Represent each accessibility check as a separate scenario. "
+        "Do NOT include functional or validation steps. Focus only on a11y requirements."
     )
 }
+
 
 # ===== CONTEXT FILTERING =====
 def filter_test_context(existing_tests: str, test_type: str) -> str:

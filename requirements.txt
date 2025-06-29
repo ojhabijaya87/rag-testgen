@@ -3,6 +3,7 @@ langchain-core
 langchain-community
 langchain-huggingface
 selenium
+webdriver-manager
 pyperclip
 scikit-learn
 numpy
@@ -14,5 +15,8 @@ langchain-openai
 langchain-groq
 langchain-anthropic
 langchain-google-genai
+langchain-ollama
 beautifulsoup4
-webdriver-manager
+protobuf==3.20.3
+sentence-transformers
+unstructured
