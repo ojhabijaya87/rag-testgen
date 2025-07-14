@@ -156,7 +156,7 @@ MODEL_CONFIG = {
     "zephyr-7b-beta (Hugging Face)": {
         "provider": "huggingface",
         "endpoint_url": "https://api-inference.huggingface.co/models/HuggingFaceH4/zephyr-7b-beta",
-        "temperature": 0.3,  # Adjusted for precision
+        "temperature": 0.0,  # Adjusted for precision
         "max_new_tokens": 4096,  # Increased for consistency with smaller models
         "top_p": 0.85,  # Added for coherence
         "task": "text-generation",
@@ -538,11 +538,20 @@ def filter_test_context(existing_tests: str, test_type: str) -> str:
                 filtered_tests.append(content)
     return "\n\n".join(filtered_tests)
 
-def get_hybrid_context(vector_store, with_recorder=False):
+def get_hybrid_context(vector_store, with_recorder=False, recorder_limit=3, doc_limit=1, story_limit=1, test_limit=3):
     """
-    Retrieves hybrid RAG context (documentation, requirements, existing tests, optionally recorder steps)
-    from the vector store, for use in LLM prompts.
-    Returns: doc_context, requirements, existing_tests, recorder_context
+    Retrieves enhanced RAG context including documentation, requirements, existing tests, and recorder data.
+
+    Args:
+        vector_store: Chroma vector store instance.
+        with_recorder: whether to include recorder context.
+        recorder_limit: number of recorder documents to retrieve.
+        doc_limit: number of documentation chunks to retrieve.
+        story_limit: number of user story chunks to retrieve.
+        test_limit: number of test_case chunks to retrieve.
+
+    Returns:
+        doc_context (str), requirements (str), existing_tests (str), recorder_context (str)
     """
     doc_context = ""
     requirements = ""
@@ -552,57 +561,71 @@ def get_hybrid_context(vector_store, with_recorder=False):
         return doc_context, requirements, existing_tests, recorder_context
 
     try:
-        # Get closest documentation chunk(s)
-        doc_docs = vector_store.similarity_search(
-            "test case generation", 
-            k=1,
+        # Documentation: Top-K most relevant chunks
+        docs = vector_store.similarity_search(
+            "documentation context for test generation",
+            k=doc_limit,
             filter={"source_type": "documentation"}
         )
-        doc_context = "\n".join(doc.page_content[:150] for doc in doc_docs)
-        
-        # Get closest user story (requirements) chunk(s)
-        story_docs = vector_store.similarity_search(
+        doc_context = "\n".join(doc.page_content for doc in docs)
+
+        # User story requirements
+        stories = vector_store.similarity_search(
             "user story requirements",
-            k=1,
+            k=story_limit,
             filter={"source_type": "user_story"}
         )
-        requirements = "\n".join(doc.page_content[:150] for doc in story_docs)
-        
-        # Get most relevant test cases (existing tests)
-        test_docs = vector_store.similarity_search(
-            "BDD test cases",
-            k=3,
+        requirements = "\n".join(st.page_content for st in stories)
+
+        # Existing test cases
+        tests = vector_store.similarity_search(
+            "existing BDD test cases",
+            k=test_limit,
             filter={"source_type": "test_case"}
         )
-        test_blocks = []
-        for doc in test_docs:
-            doc_test_type = doc.metadata.get('test_type', 'test')
-            content = doc.page_content[:300]
-            test_blocks.append(f"// {doc_test_type}\n{content}")
-        existing_tests = "\n\n".join(test_blocks)
-        
-        # Optionally: Get latest or most relevant recorder (user action) context
+        blocks = []
+        for doc in tests:
+            ttype = doc.metadata.get('test_type', 'test')
+            content = doc.page_content
+            blocks.append(f"// {ttype}\n{content}")
+        existing_tests = "\n\n".join(blocks)
+
+        # Recorder context: full JSON and extracted selectors
         if with_recorder:
             rec_docs = vector_store.similarity_search(
-                "user action steps",
-                k=1,
+                "devtools recorder steps",
+                k=recorder_limit,
                 filter={"source_type": "recorder"}
             )
-            if rec_docs:
-                recorder_context = rec_docs[0].page_content[:1000]
+            raw_jsons = [doc.page_content for doc in rec_docs]
+            # Combine raw JSON dumps
+            combined = "\n--- RECORDER JSON ---\n".join(raw_jsons)
+            # Parse each JSON to extract selector mappings if possible
+            try:
+                import json
+                selectors = []
+                for j in raw_jsons:
+                    data = json.loads(j)
+                    mapping = extract_selectors_from_recorder(data)
+                    selectors.append(json.dumps(mapping, indent=2))
+                selector_block = "\n--- SELECTOR MAPPING ---\n".join(selectors)
+                recorder_context = f"{combined}\n{selector_block}"
+            except Exception:
+                recorder_context = combined
     except Exception as e:
-        st.error(f"Context error: {str(e)}")
+        logger.error(f"Error building hybrid context: {e}")
 
     return doc_context, requirements, existing_tests, recorder_context
+
 
 def generate_test_type(test_type, context, requirements, existing_tests, recorder_context, current_story, llm, custom_instruction=None):
     filtered_tests = filter_test_context(existing_tests, test_type)
     instruction = custom_instruction if custom_instruction else TEST_TYPE_INSTRUCTIONS[test_type]
     full_prompt = TEST_PROMPT.format(
-        context=context[:300],
-        requirements=requirements[:200],
-        recorder_context=recorder_context[:500],
-        existing_tests=filtered_tests[:400],
+        context=context[:10000],
+        requirements=requirements[:10000],
+        recorder_context=recorder_context[:10000],
+        existing_tests=filtered_tests[:10000],
         current_story=current_story,
         test_type_instructions=instruction
     )
@@ -986,6 +1009,14 @@ def generate_test_script_with_llm(
         TASK: Generate test automation files for this scenario
         TOOL: {tool} | LANGUAGE: {language} | TEST TYPE: {test_type}
         
+        === SELECTOR MAPPING (from Recorder) ===
+        {recorder_context}
+
+        === LOCATOR DERIVATION RULES ===
+        1• Derive every `page.locator(…)` selector directly from the Recorder JSON above.
+        2• Do NOT invent or guess any selectors—use only those present in the JSON.
+        3• If a step needs a selector not in the JSON, leave a clear placeholder comment.
+
         === KEY RULES ===
         1. MUST generate 3 files: feature, steps, and POM classes
         2. Steps MUST import and use POM classes
