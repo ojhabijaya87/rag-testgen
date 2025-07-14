@@ -1,7 +1,9 @@
 ### -------------------- IMPORTS & DEPENDENCIES -------------------- ###
 
 from collections import defaultdict
+import logging
 from pathlib import Path
+import textwrap
 from langchain_core.prompts import PromptTemplate
 import streamlit as st
 import asyncio
@@ -42,23 +44,37 @@ MODEL_CONFIG = {
     "ollama-phi (Offline)": {
         "provider": "ollama",
         "model_name": "phi3:14b-medium-4k-instruct",
-        "temperature": 0.3,
-        "max_tokens": 4096,
-        "top_p": 0.9
+        "temperature": 0.3,  # Balanced for structured output
+        "max_tokens": 4096,  # Suitable for smaller model and single scenarios
+        "top_p": 0.85,  # Ensures coherence for code-like output
     },
     "ollama-llama3 (Offline)": {
         "provider": "ollama",
         "model_name": "llama3.1:8b",
-        "temperature": 0.3,
-        "max_tokens": 8192,
-        "top_p": 0.9
+        "temperature": 0.3,  # Balanced for structured output
+        "max_tokens": 3072,  # Supports multiple scenarios/scripts
+        "top_p": 0.85,  # Ensures coherence
     },
     "ollama-mistral (Offline)": {
         "provider": "ollama",
         "model_name": "mistral:7b-instruct",
-        "temperature": 0.4,
-        "max_tokens": 32768,
-        "top_p": 0.95
+        "temperature": 0.3,  # Reduced for precision
+        "max_tokens": 8192,  # Reduced to reasonable limit for test generation
+        "top_p": 0.85,  # Reduced for coherence
+    },
+    "ollama-deepseek-coder (Offline)": {
+        "provider": "ollama",
+        "model_name": "deepseek-coder:6.7b-instruct",
+        "temperature": 0.2,  # Increased for flexibility, optimized for code generation
+        "max_tokens": 3072,  # Increased from 5000 to handle multiple scenarios
+        "top_p": 0.85,  # Reduced for higher coherence
+    },
+    "ollama-codellama (Offline)": {
+        "provider": "ollama",
+        "model_name": "codellama:34b-instruct",
+        "temperature": 0.3,  # Increased for flexibility, optimized for code
+        "max_tokens": 8192,  # Increased from 5000 to handle multiple scenarios
+        "top_p": 0.85,  # Reduced for coherence
     },
     "ollama-zephyr (Offline)": {
         "provider": "ollama",
@@ -70,147 +86,209 @@ MODEL_CONFIG = {
     "ollama-mixtral (Offline)": {
         "provider": "ollama",
         "model_name": "mixtral:8x7b-instruct",
-        "temperature": 0.3,
-        "max_tokens": 32768,
-        "top_p": 0.9
+        "temperature": 0.3,  # Balanced for structured output
+        "max_tokens": 16384,  # Reduced to reasonable limit for complex outputs
+        "top_p": 0.85,  # Adjusted for coherence
     },
     "ollama-command-r (Offline)": {
         "provider": "ollama",
         "model_name": "command-r:35b-v0.1",
-        "temperature": 0.3,
-        "max_tokens": 128000,
-        "top_p": 0.9
+        "temperature": 0.3,  # Balanced for structured output
+        "max_tokens": 16384,  # Reduced from 128000 to optimize resource use
+        "top_p": 0.85,  # Adjusted for coherence
     },
     "ollama-deepseek (Offline)": {
         "provider": "ollama",
         "model_name": "deepseek-coder:33b-instruct",
+        "temperature": 0.3,  # Adjusted for consistency and flexibility
+        "max_tokens": 16384,  # Matches larger models for complex outputs
+        "top_p": 0.85,  # Adjusted for coherence
+    },
+     "ollama-codellama:70b-instruct (Offline)": {
+        "provider": "ollama",
+        "model_name": "codellama:70b-instruct",
+        "temperature": 0.3,
+        "max_tokens": 8192,
+        "top_p": 0.85
+    },
+    "ollama-codegemma:7b-instruct (Offline)": {
+        "provider": "ollama",
+        "model_name": "codegemma:7b-instruct",
+        "temperature": 0.2,
+        "max_tokens": 4096,
+        "top_p": 0.9
+    },
+    "ollama-codestral:latest (Offline)": {
+        "provider": "ollama",
+        "model_name": "codestral:latest",
+        "temperature": 0.25,
+        "max_tokens": 16384,
+        "top_p": 0.85
+    },
+    "ollama-codeqwen:7b (Offline)": {
+        "provider": "ollama",
+        "model_name": "codeqwen:7b",
+        "temperature": 0.3,
+        "max_tokens": 16384,
+        "top_p": 0.85
+    },
+    "ollama-codegeex:4b (Offline)": {
+        "provider": "ollama",
+        "model_name": "codegeex:4b",
+        "temperature": 0.3,
+        "max_tokens": 4096,
+        "top_p": 0.9
+    },
+    "ollama-deepseek-coder-v2:16b (Offline)": {
+        "provider": "ollama",
+        "model_name": "deepseek-coder-v2:16b",
         "temperature": 0.2,
         "max_tokens": 16384,
+        "top_p": 0.85
+    },
+    "ollama-qwen2.5-coder:7b (Offline)": {
+        "provider": "ollama",
+        "model_name": "qwen2.5-coder:7b",
+        "temperature": 0.3,
+        "max_tokens": 8192,
         "top_p": 0.9
     },
     "zephyr-7b-beta (Hugging Face)": {
         "provider": "huggingface",
         "endpoint_url": "https://api-inference.huggingface.co/models/HuggingFaceH4/zephyr-7b-beta",
-        "temperature": 0.2,
-        "max_new_tokens": 3072,
-        "task": "text-generation"
+        "temperature": 0.3,  # Adjusted for precision
+        "max_new_tokens": 4096,  # Increased for consistency with smaller models
+        "top_p": 0.85,  # Added for coherence
+        "task": "text-generation",
     },
     "llama3-8b (Hugging Face)": {
         "provider": "huggingface",
         "endpoint_url": "https://api-inference.huggingface.co/models/meta-llama/Meta-Llama-3-8B-Instruct",
-        "temperature": 0.3,
-        "max_new_tokens": 8192,
-        "task": "text-generation"
+        "temperature": 0.3,  # Consistent with other Llama models
+        "max_new_tokens": 8192,  # Matches ollama-llama3
+        "top_p": 0.85,  # Added for coherence
+        "task": "text-generation",
     },
     "llama3-70b (Hugging Face)": {
         "provider": "huggingface",
         "endpoint_url": "https://api-inference.huggingface.co/models/meta-llama/Meta-Llama-3-70B-Instruct",
-        "temperature": 0.3,
-        "max_new_tokens": 8192,
-        "task": "text-generation"
+        "temperature": 0.3,  # Consistent with other Llama models
+        "max_new_tokens": 8192,  # Matches ollama-llama3
+        "top_p": 0.85,  # Added for coherence
+        "task": "text-generation",
     },
     "gpt-4o (OpenAI)": {
         "provider": "openai",
         "model_name": "gpt-4o",
-        "temperature": 0.4,
-        "max_tokens": 4096,
-        "top_p": 0.9
+        "temperature": 0.4,  # Kept for balanced natural language generation
+        "max_tokens": 4096,  # Suitable for high-quality model
+        "top_p": 0.9,  # Kept for slight diversity in natural language
     },
     "gpt-4-turbo (OpenAI)": {
         "provider": "openai",
         "model_name": "gpt-4-turbo",
-        "temperature": 0.4,
-        "max_tokens": 4096,
-        "top_p": 0.9
+        "temperature": 0.4,  # Kept for balanced natural language generation
+        "max_tokens": 4096,  # Suitable for high-quality model
+        "top_p": 0.9,  # Kept for slight diversity
     },
     "gpt-3.5-turbo (OpenAI)": {
         "provider": "openai",
         "model_name": "gpt-3.5-turbo-0125",
-        "temperature": 0.5,
-        "max_tokens": 4096,
-        "top_p": 0.9
+        "temperature": 0.4,  # Reduced for more precision
+        "max_tokens": 4096,  # Suitable for efficient model
+        "top_p": 0.9,  # Kept for slight diversity
     },
     "gemini-1.5-flash (Google)": {
         "provider": "google",
         "model_name": "gemini-1.5-flash",
-        "temperature": 0.5,
-        "max_tokens": 8192,
-        "top_p": 0.9
+        "temperature": 0.4,  # Reduced for precision
+        "max_tokens": 8192,  # Matches mid-sized models
+        "top_p": 0.9,  # Kept for slight diversity
     },
     "gemini-1.5-pro (Google)": {
         "provider": "google",
         "model_name": "gemini-1.5-pro",
-        "temperature": 0.5,
-        "max_tokens": 8192,
-        "top_p": 0.9
+        "temperature": 0.4,  # Reduced for precision
+        "max_tokens": 8192,  # Matches mid-sized models
+        "top_p": 0.9,  # Kept for slight diversity
     },
     "llama3-70b (Groq)": {
         "provider": "groq",
         "model_name": "llama3-70b-8192",
-        "temperature": 0.3,
-        "max_tokens": 8192,
-        "top_p": 0.9
+        "temperature": 0.3,  # Consistent with other Llama models
+        "max_tokens": 8192,  # Matches model capability
+        "top_p": 0.85,  # Adjusted for coherence
     },
     "mixtral-8x7b (Groq)": {
         "provider": "groq",
         "model_name": "mixtral-8x7b-32768",
-        "temperature": 0.3,
-        "max_tokens": 32768,
-        "top_p": 0.9
+        "temperature": 0.3,  # Consistent with ollama-mixtral
+        "max_tokens": 16384,  # Reduced to optimize resource use
+        "top_p": 0.85,  # Adjusted for coherence
     },
     "claude-3-haiku (Anthropic)": {
         "provider": "anthropic",
         "model_name": "claude-3-haiku-20240307",
-        "temperature": 0.4,
-        "max_tokens": 200000,
-        "top_p": 0.9
+        "temperature": 0.4,  # Kept for balanced natural language
+        "max_tokens": 16384,  # Reduced from 200000 to optimize
+        "top_p": 0.9,  # Kept for slight diversity
     },
     "mixtral-8x22b (Hugging Face)": {
         "provider": "huggingface",
         "endpoint_url": "https://api-inference.huggingface.co/models/mistralai/Mixtral-8x22B-Instruct-v0.1",
-        "temperature": 0.3,
-        "max_new_tokens": 65536,
-        "task": "text-generation"
+        "temperature": 0.3,  # Consistent with other Mixtral models
+        "max_new_tokens": 16384,  # Reduced to optimize
+        "top_p": 0.85,  # Added for coherence
+        "task": "text-generation",
     },
     "deepseek-coder-33b (Hugging Face)": {
         "provider": "huggingface",
         "endpoint_url": "https://api-inference.huggingface.co/models/deepseek-ai/deepseek-coder-33b-instruct",
-        "temperature": 0.2,
-        "max_new_tokens": 16384,
-        "task": "text-generation"
+        "temperature": 0.3,  # Consistent with ollama-deepseek
+        "max_new_tokens": 16384,  # Matches ollama-deepseek
+        "top_p": 0.85,  # Added for coherence
+        "task": "text-generation",
     },
     "claude-3-sonnet (Anthropic)": {
         "provider": "anthropic",
         "model_name": "claude-3-sonnet-20240229",
-        "temperature": 0.4,
-        "max_tokens": 200000,
-        "top_p": 0.9
+        "temperature": 0.4,  # Kept for balanced natural language
+        "max_tokens": 16384,  # Reduced from 200000 to optimize
+        "top_p": 0.9,  # Kept for slight diversity
     },
     "command-r-plus (Groq)": {
         "provider": "groq",
         "model_name": "command-r-plus",
-        "temperature": 0.3,
-        "max_tokens": 128000,
-        "top_p": 0.9
+        "temperature": 0.3,  # Consistent with ollama-command-r
+        "max_tokens": 16384,  # Reduced from 128000 to optimize
+        "top_p": 0.85,  # Adjusted for coherence
     },
     "gemini-1.0-pro (Google)": {
         "provider": "google",
         "model_name": "gemini-1.0-pro",
-        "temperature": 0.5,
-        "max_tokens": 32768,
-        "top_p": 0.9
+        "temperature": 0.4,  # Reduced for precision
+        "max_tokens": 8192,  # Reduced to match mid-sized models
+        "top_p": 0.9,  # Kept for slight diversity
     },
     "phi-3-mini-128k (Hugging Face)": {
         "provider": "huggingface",
         "endpoint_url": "https://api-inference.huggingface.co/models/microsoft/Phi-3-mini-128k-instruct",
-        "temperature": 0.3,
-        "max_new_tokens": 128000,
-        "task": "text-generation"
-    }
+        "temperature": 0.3,  # Consistent with ollama-phi
+        "max_new_tokens": 16384,  # Reduced to optimize for smaller model
+        "top_p": 0.85,  # Added for coherence
+        "task": "text-generation",
+    },
 }
 
 MODEL_USAGE_HINTS = {
     "Select a model": "ℹ️ Please select a model to enable test generation.",
+    "ollama-codellama:70b-instruct (Offline)": "🖥️ Run: `ollama pull codellama:70b-instruct` - Meta's best coding model",
+    "ollama-codegemma:7b-instruct (Offline)": "🖥️ Run: `ollama pull codegemma:7b-instruct` - Google's lightweight coding model",
+    "ollama-codestral:latest (Offline)": "🖥️ Run: `ollama pull codestral` - Mistral's cutting-edge coding assistant",
+    "ollama-codeqwen:7b (Offline)": "🖥️ Run: `ollama pull codeqwen:7b` - Alibaba's Qwen coding model",
+    "ollama-codegeex:4b (Offline)": "🖥️ Run: `ollama pull codegeex:4b` - Tencent's multi-language coding model",
+    "ollama-deepseek-coder-v2:16b (Offline)": "🖥️ Run: `ollama run deepseek-coder-v2:16b` - DeepSeek's latest coding model",
+    "ollama-qwen2.5-coder:7b (Offline)": "🖥️ Run: `ollama pull qwen2.5-coder:7b` - Alibaba's newest coding model",
     "ollama-phi (Offline)": "🖥️ Run: `ollama pull phi3:14b-medium-4k-instruct`",
     "ollama-llama3 (Offline)": "🖥️ Run: `ollama pull llama3:70b-instruct`",
     "ollama-mistral (Offline)": "🖥️ Run: `ollama pull mistral:7b-instruct`",
@@ -290,7 +368,7 @@ def get_llm(model_name: str):
 def load_embeddings():
     return HuggingFaceEmbeddings(model_name="all-MiniLM-L6-v2")
 
-OLLAMA_TIMEOUT = 600
+OLLAMA_TIMEOUT = 5000
 
 TEST_TYPE_INSTRUCTIONS = {
     "positive": (
@@ -328,6 +406,7 @@ IMPORTANT:
 - You MUST incorporate information retrieved from the vector database knowledge base. If relevant information exists in the context sections below, USE it to inform your scenarios.
 - Do NOT invent features, functionality, or scenarios that are not supported by the provided context or user story.
 - Only generate test scenarios for the specific test type provided below.
+- **Always** include a `STEP DEFINITIONS:` section for {test_type} tests, even if they mirror other cases.
 DOCUMENTATION CONTEXT:
 {context}
 USER REQUIREMENTS:
@@ -568,28 +647,33 @@ def scaffold_framework(path: Path, language: str, tool: str, style: str):
     Create on-disk folders/files for the chosen framework.
     """
     lang = language.lower()
-    tl  = tool.lower()
+    tl = tool.lower()
     stl = style.lower()
 
     path.mkdir(parents=True, exist_ok=True)
 
     # Playwright + TS + BDD
     if tl == "playwright" and lang == "typescript" and stl == "bdd":
-        # 1) features/, 2) steps/, 3) supports/pages/, 4) config/, 5) env/
         for d in ("features", "steps", "supports/pages", "config", "env"):
             (path / d).mkdir(parents=True, exist_ok=True)
-        # stub config file
         (path / "config" / "playwright.config.ts").write_text("""
 import { defineConfig } from '@playwright/test';
 export default defineConfig({
   use: { baseURL: process.env.BASE_URL },
 });
 """.strip())
-        # basic package.json + tsconfig.json + README.md
         (path / "package.json").write_text("""
 {
   "name": "playwright-bdd-ts-pom",
-  "devDependencies": { "@playwright/test": "^1.0.0" }
+  "devDependencies": {
+    "@playwright/test": "^1.47.0",
+    "@cucumber/cucumber": "^10.0.0",
+    "@axe-core/playwright": "^4.9.0",
+    "typescript": "^5.5.0"
+  },
+  "scripts": {
+    "test": "cucumber-js"
+  }
 }
 """.strip())
         (path / "tsconfig.json").write_text("""
@@ -597,12 +681,13 @@ export default defineConfig({
   "compilerOptions": {
     "target": "ESNext",
     "module": "commonjs",
-    "outDir": "dist"
+    "outDir": "dist",
+    "strict": true,
+    "esModuleInterop": true
   }
 }
 """.strip())
         (path / "README.md").write_text("# Playwright BDD TypeScript POM")
-
         return
 
     # Playwright + TS + non-BDD
@@ -616,7 +701,10 @@ export default defineConfig({});
         (path / "package.json").write_text("""
 {
   "name": "playwright-ts-pom",
-  "devDependencies": { "@playwright/test": "^1.0.0" }
+  "devDependencies": {
+    "@playwright/test": "^1.47.0",
+    "typescript": "^5.5.0"
+  }
 }
 """.strip())
         (path / "README.md").write_text("# Playwright TypeScript POM")
@@ -647,128 +735,476 @@ def get_test_directory(path: Path, language: str) -> Path:
         return path / "Tests"
     return path / "tests"
 
+def remove_duplicate_imports(content: str) -> str:
+    """
+    Given the full text of a TypeScript/JS file, extract all import statements,
+    dedupe & sort them, and move them to the very top of the file.
+    """
+    lines = content.splitlines()
+    import_lines: List[str] = []
+    other_lines: List[str] = []
 
-def get_latest_recorder_context(vector_store):
-    """Return the most recently stored recorder file content as string, or None."""
-    recorder_docs = []
-    if vector_store:
-        results = vector_store.get()
-        for m, doc in zip(results.get("metadatas", []), results.get("documents", [])):
-            if m.get("source_type") == "recorder":
-                recorder_docs.append((m.get("ingested_at", ""), doc))
-    if recorder_docs:
-        recorder_docs.sort(reverse=True)
-        return recorder_docs[0][1]
-    return None
+    # Separate imports from everything else
+    for line in lines:
+        if line.strip().startswith("import "):
+            # Normalize spacing/trailing semicolon
+            cleaned = line.strip().rstrip(";")
+            import_lines.append(cleaned + ";")
+        else:
+            other_lines.append(line)
+
+    # Dedupe & sort
+    unique_imports = sorted(set(import_lines))
+
+    # Reassemble: imports block + a blank line + the rest
+    cleaned_content = "\n".join(unique_imports)
+    rest = "\n".join(other_lines).lstrip("\n")  # drop leading blank lines
+
+    return f"{cleaned_content}\n\n{rest}"
+
+def extract_imports_and_steps(content: str) -> tuple:
+    """Extract imports and step definitions from step file content"""
+    import_lines = []
+    step_defs = []
+    
+    lines = content.splitlines()
+    for line in lines:
+        stripped = line.strip()
+        if stripped.startswith("import ") and "from" in stripped:
+            import_lines.append(line)
+        elif stripped and not stripped.startswith("//") and not stripped.startswith("/*"):
+            step_defs.append(line)
+    
+    return "\n".join(import_lines), "\n".join(step_defs)
+
+### Add parse_llm_output function ###
+def parse_llm_output(raw_output: str, test_type: str, step_ext: str, pom_ext: str) -> list:
+    """
+    Enhanced parser that properly handles step definitions and POM classes
+    with robust marker detection and fallback mechanisms
+    """
+    files = []
+    current_file = {"path": "", "content": ""}
+    lines = raw_output.splitlines()
+    i = 0
+    
+    # Track found files to avoid duplicates
+    found_files = set()
+    
+    while i < len(lines):
+        line = lines[i].strip()
+        
+        # 1. Detect explicit markers
+        if line.upper().startswith("FEATURE FILE:"):
+            if current_file["path"]:
+                files.append(current_file)
+            current_file = {"path": f"features/{test_type}.feature", "content": ""}
+            found_files.add("feature")
+            i += 1
+            continue
+            
+        if line.upper().startswith("STEP DEFINITIONS:"):
+            if current_file["path"]:
+                files.append(current_file)
+            current_file = {"path": f"steps/{test_type}.{step_ext}", "content": ""}
+            found_files.add("steps")
+            i += 1
+            continue
+            
+        if line.upper().startswith("POM CLASS:"):
+            if current_file["path"]:
+                files.append(current_file)
+            # Extract class name from next line if not on same line
+            if " " in line:
+                cls_name = line.split(" ", 1)[1].strip()
+            else:
+                i += 1
+                cls_name = lines[i].strip() if i < len(lines) else "Page"
+            pom_path = f"supports/pages/{cls_name}.{pom_ext}"
+            current_file = {"path": pom_path, "content": ""}
+            found_files.add(pom_path)
+            i += 1
+            continue
+            
+        # 2. Fallback detection for Gherkin
+        if not current_file["path"] and line.startswith("Feature:"):
+            if current_file["path"]:
+                files.append(current_file)
+            current_file = {"path": f"features/{test_type}.feature", "content": line + "\n"}
+            found_files.add("feature")
+            i += 1
+            continue
+            
+        # 3. Fallback for step definitions (look for import patterns)
+        if not current_file["path"] and ("import" in line and ("Given" in line or "When" in line or "Then" in line)):
+            if current_file["path"]:
+                files.append(current_file)
+            current_file = {"path": f"steps/{test_type}.{step_ext}", "content": line + "\n"}
+            found_files.add("steps")
+            i += 1
+            continue
+            
+        # 4. Fallback for POM classes (look for class/export patterns)
+        if not current_file["path"] and ("class " in line or "export " in line) and "page" in line.lower():
+            if current_file["path"]:
+                files.append(current_file)
+            # Try to extract class name
+            cls_match = re.search(r'(class|export\s+default\s+class)\s+(\w+)', line)
+            cls_name = cls_match.group(2) if cls_match else "Page"
+            pom_path = f"supports/pages/{cls_name}.{pom_ext}"
+            current_file = {"path": pom_path, "content": line + "\n"}
+            found_files.add(pom_path)
+            i += 1
+            continue
+            
+        # 5. Accumulate content for current file
+        if current_file["path"]:
+            current_file["content"] += lines[i] + "\n"
+        
+        i += 1
+
+    # Add last file
+    if current_file["path"] and current_file["content"].strip():
+        files.append(current_file)
+
+    # Clean output
+    cleaned = []
+    skip_phrases = [
+        "Note:", "This implementation", "Here are", "Assuming", 
+        "// Generated by", "```", "/*", "*/", "<!--", "-->"
+    ]
+    
+    for file in files:
+        content = file["content"].strip()
+        lines = content.splitlines()
+        
+        # Remove skip phrases
+        cleaned_lines = [
+            line for line in lines
+            if not any(phrase in line for phrase in skip_phrases)
+        ]
+        
+        # Remove code fences
+        content = "\n".join(cleaned_lines)
+        content = re.sub(r'```[a-z]*\n', '', content)
+        
+        # Special handling for feature files
+        if file["path"].endswith(".feature"):
+            content = "\n".join([
+                line for line in content.splitlines()
+                if re.match(r'^(Feature:|Scenario:|Given |When |Then |And |#)', line)
+            ])
+        
+        cleaned.append({"path": file["path"], "content": content})
+    
+    return cleaned
+
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 def generate_test_script_with_llm(
-    llm, language, tool, style, scenario, test_type=None,  
-    app_url=None, recorder_context=None, doc_context=None, requirements=None
-):
+    llm,
+    language: str,
+    tool: str,
+    style: str,
+    scenario: str,
+    test_type: str,
+    app_url: str = None,
+    recorder_context: str = None,
+    doc_context: str = None,
+    requirements: str = None,
+    existing_tests: str = None,
+    timestamp: str = None  # Unique identifier for Streamlit keys
+) -> list:
     """
-    LLM-based script generation for a single scenario.
-    Produces automation code in strict scalable POM/project structure,
-    based on user selections for tool, language, style, and test_type.
+    Generates test automation scripts with strict enforcement of required files:
+    - Feature file (.feature)
+    - Step definitions (.ts/.js/.py)
+    - POM classes used in steps (.ts/.js/.py)
+    Uses multiple validation techniques to ensure all components are present.
     """
-    folder_layout = ""
-    extra_rules = ""
-    file_naming_hint = ""
+    # --- Supported tool/language combinations ---
+    SUPPORTED = {
+        "playwright": {
+            "typescript": {"bdd": {"step_ext": "ts", "pom_ext": "ts"}},
+            "javascript": {"bdd": {"step_ext": "js", "pom_ext": "js"}},
+        },
+        "selenium": {
+            "python": {"bdd": {"step_ext": "py", "pom_ext": "py"}},
+        },
+    }
     
-    if tool.lower() == "playwright" and language.lower() == "typescript":
-        if style.lower() == "bdd":
-            folder_layout = """
-Strictly use this project structure for Playwright-BDD TypeScript:
-playwright-bdd-ts-pom/
-├── features/
-│   └── <feature_name>.feature
-├── steps/
-│   └── <feature_name>.steps.ts
-├── supports/
-│   └── pages/
-│       ├── basePage.ts
-│       └── <pageName>.ts
-├── config/
-│   └── playwright.config.ts
-├── env/
-│   └── .env files
-├── package.json, tsconfig.json, README.md, etc.
-""".strip()
-            extra_rules = """
-- Place all step definitions in `/steps/` as `<feature_name>.steps.ts`.
-- Page Object Model classes go in `/supports/pages/`.
-- Feature files go in `/features/` as `<feature_name>.feature`.
-- For each test type (positive/negative/edge/accessibility), create a separate `.feature` file (e.g., `positive.feature`).
-- Show code for BOTH the page object(s) and step definition(s) for the given scenario and test type.
-""".strip()
-            file_naming_hint = f"File naming: features/{test_type}.feature, steps/{test_type}.steps.ts"
+    # Validate tool/language/style combination
+    combo = (
+        SUPPORTED.get(tool.lower(), {})
+                 .get(language.lower(), {})
+                 .get(style.lower())
+    )
+    if not combo:
+        raise ValueError(f"Unsupported combination: {tool}/{language}/{style}")
+    
+    step_ext = combo["step_ext"]
+    pom_ext  = combo["pom_ext"]
+    
+    # --- Core instructions with explicit output format ---
+    output_format = textwrap.dedent(f"""
+        === OUTPUT REQUIREMENTS ===
+        You MUST generate output in EXACTLY this format:
+        
+        // BEGIN FILE: features/{test_type}.feature
+        Feature: [Feature name]
+          Scenario: [Scenario name]
+            Given [step]
+            When [step]
+            Then [step]
+        
+        // BEGIN FILE: steps/{test_type}.{step_ext}
+        import {{ Given, When, Then }} from '@cucumber/cucumber';
+        import HomePage from '../../supports/pages/HomePage';  // REQUIRED: Import POM classes
+        
+        Given('[step pattern]', async () => {{
+            await new HomePage(page).navigate();  // REQUIRED: Use POM classes
+        }});
+        
+        // BEGIN FILE: supports/pages/HomePage.{pom_ext}
+        import {{ Page }} from '@playwright/test';
+        
+        export default class HomePage {{
+            constructor(private page: Page) {{}}
+            
+            async navigate() {{
+                await this.page.goto('/');
+            }}
+        }}
+        
+        // END OUTPUT
+    """).strip()
+
+    # --- Build concise prompt ---
+    prompt = textwrap.dedent(f"""
+        ROLE: Senior Test Automation Engineer
+        TASK: Generate test automation files for this scenario
+        TOOL: {tool} | LANGUAGE: {language} | TEST TYPE: {test_type}
+        
+        === KEY RULES ===
+        1. MUST generate 3 files: feature, steps, and POM classes
+        2. Steps MUST import and use POM classes
+        3. POM classes MUST be in supports/pages/
+        4. Steps MUST include an implementation body, never leave a Given/When/Then empty
+        5. Follow the EXACT output format below
+        
+        === SCENARIO ===
+        {scenario}
+        
+        {output_format}
+        
+        IMPORTANT: 
+        - DO NOT include any explanations or markdown
+        - DO NOT repeat these instructions
+        - START output with '// BEGIN FILE:'
+        - INCLUDE ALL REQUIRED FILES
+    """)
+    
+    logger.info(f"Prompt for {test_type}:\n{prompt[:1500]}...")
+    
+    # --- Invoke LLM ---
+    try:
+        if hasattr(llm, "invoke"):
+            raw = llm.invoke(prompt, timeout=OLLAMA_TIMEOUT)
         else:
-            folder_layout = """
-Strictly use this project structure for Playwright TypeScript (non-BDD):
-playwright-ts-pom/
-├── tests/e2e/
-│   └── <feature>.spec.ts
-├── pages/
-│   ├── basePage.ts
-│   └── <pageName>.ts
-├── utils/
-├── config/
-│   └── playwright.config.ts
-├── env/
-│   └── .env files
-├── package.json, tsconfig.json, README.md, etc.
-""".strip()
-            extra_rules = """
-- UI test specs in `/tests/e2e/` as `<feature>.spec.ts`.
-- POM classes in `/pages/`.
-- Helper/utils in `/utils/`.
-- Test data/fixtures in `/tests/fixtures/`.
-- For each test type (positive/negative/edge/accessibility), create a separate spec file (e.g., `positive.spec.ts`).
-- Show code for BOTH the page object(s) and the corresponding test spec for the given scenario and test type.
-""".strip()
-            file_naming_hint = f"File naming: tests/e2e/{test_type}.spec.ts"
-    else:
-        # Fallback for other tools/languages: instruct to follow their conventions
-        folder_layout = f"Use industry-standard folder structure for {tool} and {language}. Only code—no markdown/explanations."
-        extra_rules = ""
-        file_naming_hint = f"(Test type: {test_type})"
+            raw = asyncio.run(llm.ainvoke(prompt, timeout=OLLAMA_TIMEOUT))
 
-    # --- CONTEXT: doc, requirements, URL, recorder ---
-    doc_context_snippet = f"\nDOCUMENTATION CONTEXT:\n{doc_context.strip()}" if doc_context else ""
-    requirements_snippet = f"\nREQUIREMENTS/USER STORY:\n{requirements.strip()}" if requirements else ""
-    recorder_snippet = f"\nRECORDER STEPS:\n{recorder_context.strip()}" if recorder_context else ""
-    url_line = f"\nBASE URL: {app_url}" if app_url else "\nBASE URL: NO_URL"
+        st.write(raw)
+        raw_text = getattr(raw, "content", str(raw))
+        logger.info(f"Raw LLM output ({len(raw_text)} chars)")
+        
+        # --- Debug: Show raw output in UI ---
+        st.subheader("Raw LLM Output")
+        # Create unique key using timestamp
+        unique_key = f"raw_{test_type}_{timestamp or time.time()}"
+        st.text_area("", value=raw_text, height=400, key=unique_key)
+        
+        # --- Parse using explicit markers ---
+        files = []
+        current_path = ""
+        current_content = []
+        
+        # Split by file markers
+        sections = re.split(r'// BEGIN FILE:\s*', raw_text)
+        for section in sections:
+            if not section.strip():
+                continue
+                
+            # Extract path and content
+            path_end = section.find('\n')
+            if path_end == -1:
+                path = section.strip()
+                content = ""
+            else:
+                path = section[:path_end].strip()
+                content = section[path_end:].strip()
+            
+            # Remove end marker if present
+            if "// END OUTPUT" in content:
+                content = content.split("// END OUTPUT")[0].strip()
+                
+            # Validate and store
+            if path:
+                files.append({
+                    "path": path,
+                    "content": content
+                })
+        
+        # --- Ensure required files exist ---
+        required_files = {
+            f"features/{test_type}.feature": {
+                "exists": False,
+                "content": f"# MISSING FEATURE FILE\nFeature: Placeholder\n  Scenario: Implement scenario\n    Given Implement steps\n"
+            },
+            f"steps/{test_type}.{step_ext}": {
+                "exists": False,
+                "content": f"// MISSING STEP FILE\nimport {{ Given }} from '@cucumber/cucumber';\n\nGiven('Implement steps', () => {{}});"
+            }
+        }
+        
+        pom_files = []
+        
+        # Check what we have
+        for file in files:
+            # Check for required files
+            if file["path"] in required_files:
+                required_files[file["path"]]["exists"] = True
+            
+            # Collect POM files
+            if file["path"].startswith("supports/pages/") and file["path"].endswith(f".{pom_ext}"):
+                pom_files.append(file)
+        
+        # Add missing required files
+        for path, info in required_files.items():
+            if not info["exists"]:
+                files.append({
+                    "path": path,
+                    "content": info["content"]
+                })
+        
+        # --- Critical: Ensure POM classes exist and are used in steps ---
+        step_file_content = next(
+            (f["content"] for f in files if f["path"] == f"steps/{test_type}.{step_ext}"), 
+            ""
+        )
+        
+        # 1. Find POM classes referenced in step definitions
+        pom_imports = re.findall(
+            r'import\s+\{?\s*(\w+)\s*\}?\s+from\s+[\'"]\.\./\.\./supports/pages/',
+            step_file_content
+        )
+        logger.info(f"Detected POM imports in steps: {pom_imports}")
+        
+        # 2. Ensure each imported POM exists
+        for pom_class in pom_imports:
+            pom_path = f"supports/pages/{pom_class}.{pom_ext}"
+            
+            # Check if we already have this POM
+            if not any(f["path"] == pom_path for f in files):
+                # Create missing POM
+                files.append({
+                    "path": pom_path,
+                    "content": (
+                        f"// MISSING POM CLASS: {pom_class}\n"
+                        f"import {{ Page }} from '@playwright/test';\n\n"
+                        f"export default class {pom_class} {{\n"
+                        f"  constructor(private page: Page) {{}}\n\n"
+                        f"  // IMPLEMENT METHODS USED IN STEPS\n"
+                        f"}}"
+                    )
+                })
+                logger.warning(f"Added missing POM: {pom_path}")
+        
+        # 3. If no POMs at all, create default
+        if not pom_imports and not pom_files:
+            default_pom = "DefaultPage"
+            default_path = f"supports/pages/{default_pom}.{pom_ext}"
+            files.append({
+                "path": default_path,
+                "content": (
+                    f"import {{ Page }} from '@playwright/test';\n\n"
+                    f"export default class {default_pom} {{\n"
+                    f"  constructor(private page: Page) {{}}\n\n"
+                    f"  async navigate() {{\n"
+                    f"    await this.page.goto('/');\n"
+                    f"  }}\n"
+                    f"}}"
+                )
+            })
+            
+            # Update step file to import default POM
+            step_path = f"steps/{test_type}.{step_ext}"
+            for file in files:
+                if file["path"] == step_path:
+                    file["content"] = (
+                        f"import {{ Given }} from '@cucumber/cucumber';\n"
+                        f"import {default_pom} from '../../supports/pages/{default_pom}';\n\n"
+                        f"{file['content']}"
+                    )
+        
+        # --- Post-process content ---
+        for file in files:
+            content = file["content"]
+            
+            # Remove comment-only lines
+            content = re.sub(r'^\s*//.*$', '', content, flags=re.MULTILINE)
 
-    # === FINAL PROMPT ===
-    prompt = f"""
-You are an expert SDET.
-Generate ONLY valid, scalable, production-grade automation code for Playwright in TypeScript ({style} style), using the structure below.
+            # Remove REQUIRED comments
+            content = re.sub(r'//\s*REQUIRED:.*$', '', content, flags=re.MULTILINE)
+            
+            # Remove markdown code fences
+            content = re.sub(r'```[a-z]*', '', content)
+            
+            # Special handling for feature files
+            if file["path"].endswith(".feature"):
+                # Keep only Gherkin lines
+                content = "\n".join([
+                    line for line in content.splitlines() 
+                    if re.match(r'^\s*(Feature|Scenario|Given|When|Then|And|#)', line, re.IGNORECASE)
+                ])
+            
+            file["content"] = content.strip()
+        
+        # --- Log results ---
+        logger.info(f"Generated {len(files)} files:")
+        for file in files:
+            logger.info(f" - {file['path']} ({len(file['content'])} chars)")
+        
+        return files
+        
+    except Exception as err:
+        logger.error(f"LLM processing failed: {err}")
+        st.error(f"⚠️ LLM processing error: {str(err)}")
+        return [
+            {"path": f"features/{test_type}.feature", "content": "# ERROR: Generation failed"},
+            {"path": f"steps/{test_type}.{step_ext}", "content": "// ERROR: Generation failed"},
+            {"path": f"supports/pages/ErrorPage.{pom_ext}", "content": "// ERROR: Generation failed"}
+        ]
 
-{folder_layout}
-{extra_rules}
-{file_naming_hint}
+def extract_selectors_from_recorder(recorder_json: dict) -> dict:
+    """
+    Given a DevTools Recorder JSON object, extract a mapping from
+    “command + value” to the actual selector used.
 
-{doc_context_snippet}
-{requirements_snippet}
-{url_line}
-{recorder_snippet}
-
-SCENARIO:
-{scenario}
-
-STRICT RULES:
-- Do NOT include any markdown, explanation, or extra text—only pure code.
-- Follow strict POM, modular, and scalable best practices.
-""".strip()
-
-    if hasattr(llm, "invoke"):
-        return llm.invoke(prompt)
-    elif hasattr(llm, "ainvoke"):
-        import asyncio
-        return asyncio.run(llm.ainvoke(prompt))
-    else:
-        raise Exception("LLM object does not support invoke/ainvoke")
-
-
+    Example input step:
+      { "command": "click", "target": "#searchInput", "value": "" }
+    Output mapping key: "Click" or "Type dyson fan" → "#searchInput"
+    """
+    mapping = {}
+    for step in recorder_json.get("steps", []):
+        cmd = step.get("command", "").capitalize()
+        val = step.get("value", "")
+        # Build a descriptive key: e.g. "Type dyson fan" or just "Click"
+        key = f"{cmd} {val}".strip()
+        selector = step.get("target") or step.get("selector") or ""
+        if key and selector:
+            mapping[key] = selector
+    return mapping
 
 def get_latest_recorder_context(vector_store):
     """Return the most recently stored recorder file content as string, or None."""
@@ -1165,17 +1601,19 @@ if "vector_store" in st.session_state and st.session_state.vector_store and st.s
             st.info("No recorder files found.")
 
 # Sidebar controls at bottom of file
-st.sidebar.markdown("### 🔧 Generate Automation Scripts from Stored Test Cases")
-selected_tool  = st.sidebar.selectbox("Tool", ["Playwright", "Selenium"])
-selected_lang  = st.sidebar.selectbox(
+selected_tool = st.sidebar.selectbox("Tool", ["Playwright", "Selenium"])
+selected_lang = st.sidebar.selectbox(
     "Language", ["Python", "JavaScript", "TypeScript", "Java", "C#"]
 )
 selected_style = st.sidebar.radio("Style", ["Plain", "BDD"], horizontal=True)
-target_path    = st.sidebar.text_input(
+
+# Define output_dir *before* we use it below
+target_path = st.sidebar.text_input(
     "Output Path", value=str(Path.cwd() / "auto_project")
 )
+output_dir = Path(target_path)
 
-# Rebuild URL list for selecting base URL
+# Base URL selection
 vector_store = st.session_state.get("vector_store")
 urls = []
 if vector_store:
@@ -1186,129 +1624,150 @@ if vector_store:
 selected_app_url = st.sidebar.selectbox(
     "Select Application URL for Scripts", urls, key="script_app_url_selectbox"
 )
-
-
+# 🔧 Generate Automation Scripts from Stored Test Cases
 if st.sidebar.button("Generate Automation Scripts (Stored Only)"):
     with st.spinner("🚀 Generating automation scripts..."):
+        allowed_types = ["positive", "negative", "edge", "accessibility"]
 
-        # 1) Prepare output directory & scaffold if needed
-        output_dir = Path(target_path)
+        # 1) Scaffold framework if needed
         if not detect_existing_framework(output_dir, selected_lang, selected_tool, selected_style):
             scaffold_framework(output_dir, selected_lang, selected_tool, selected_style)
+            logger.info("Scaffolded new automation framework.")
             st.sidebar.info("Scaffolded new automation framework.")
 
-        # 2) Load LLM & RAG context
+        # 2) Load contexts
         llm = get_llm(st.session_state["model_selector"])
-        doc_ctx, reqs, _, recorder_ctx = get_hybrid_context(
+        doc_ctx, reqs, existing_tests, raw_recorder_ctx = get_hybrid_context(
             st.session_state.vector_store, with_recorder=True
         )
+        logger.info(f"Loaded existing test steps:\n{existing_tests}")
 
-        # 3) Group stored test_case docs by test_type
+        # 3) Build selector snippet from recorder JSON
+        recorder_ctx = ""
+        if raw_recorder_ctx:
+            try:
+                recorder_json = json.loads(raw_recorder_ctx)
+                selector_map = extract_selectors_from_recorder(recorder_json)
+                recorder_ctx = "\n".join(f"{k} → {v}" for k, v in selector_map.items())
+            except Exception as e:
+                logger.warning(f"Failed to parse recorder JSON: {e}")
+                recorder_ctx = raw_recorder_ctx
+
+        # 4) Group test cases by explicit tag
         results = st.session_state.vector_store.get()
-        grouped = defaultdict(list)
+        grouped = {t: [] for t in allowed_types}
         for m, doc in zip(results["metadatas"], results["documents"]):
-            if m.get("source_type") == "test_case":
-                tt = m.get("test_type", "positive")
-                grouped[tt].append(doc)
+            if m.get("source_type") == "test_case" and m.get("test_type") in allowed_types:
+                grouped[m["test_type"]].append(doc)
+        logger.info("Grouped scenarios: " +
+                    ", ".join(f"{t}={len(v)}" for t, v in grouped.items()))
 
-        tl  = selected_tool.lower()
-        lang = selected_lang.lower()
-        stl = selected_style.lower()
+        # 5) Only support Playwright+TS+BDD here
+        if (
+            selected_tool.lower() == "playwright"
+            and selected_lang.lower() == "typescript"
+            and selected_style.lower() == "bdd"
+        ):
+            # ensure directories exist
+            (output_dir / "features").mkdir(parents=True, exist_ok=True)
+            (output_dir / "steps").mkdir(parents=True, exist_ok=True)
+            (output_dir / "supports" / "pages").mkdir(parents=True, exist_ok=True)
 
-        # --- PLAYWRIGHT + TS + BDD -----------------------------------------------
-        if tl == "playwright" and lang == "typescript" and stl == "bdd":
-            feat_dir = output_dir / "features"; feat_dir.mkdir(parents=True, exist_ok=True)
-            step_dir = output_dir / "steps";     step_dir.mkdir(parents=True, exist_ok=True)
-            pom_dir  = output_dir / "supports" / "pages"; pom_dir.mkdir(parents=True, exist_ok=True)
-
-            for test_type, scenarios in grouped.items():
+            # 6) Per‐category, per‐scenario generation
+            for test_type in allowed_types:
+                scenarios = grouped[test_type]
                 if not scenarios:
+                    st.sidebar.info(f"No `{test_type}` scenarios.")
                     continue
 
-                # join scenarios once
-                scenario_block = "\n\n".join(scenarios)
+                # prepare feature + step file paths
+                feat_file = output_dir / "features" / f"{test_type}.feature"
+                step_file = output_dir / "steps"    / f"{test_type}.ts"
+                pom_dir   = output_dir / "supports" / "pages"
 
-                # --- Generate Feature File ---
-                feature_prompt = (
-                    "You are an expert QA engineer.\n"
-                    "Generate ONLY the Gherkin feature file (no fences, no markdown) for these scenarios:\n\n"
-                    f"{scenario_block}"
-                )
-                feature_code = llm.invoke(feature_prompt).strip()
-                (feat_dir / f"{test_type}.feature").write_text(feature_code, encoding="utf-8")
+                # Initialize step content
+                step_content = step_file.read_text(encoding="utf-8") if step_file.exists() else ""
+                
+                # scaffold files if missing
+                if not feat_file.exists():
+                    feat_file.write_text(f"Feature: {test_type.capitalize()} tests\n\n")
+                if not step_file.exists():
+                    step_file.write_text("")
 
-                # --- Generate Steps + POM Files ---
-                step_prompt = (
-                    "You are a senior SDET.\n"
-                    "Generate ONLY Playwright-BDD TypeScript step definitions and Page Object Model classes.\n\n"
-                    "For each file, prefix with exactly:\n"
-                    "===FILE: <relative-path>===\n"
-                    "<typescript code>\n\n"
-                    "- steps/{test_type}.steps.ts should contain all Given/When/Then implementations.\n"
-                    "- supports/pages/BasePage.ts must be included.\n"
-                    "- Any additional page classes you reference go under supports/pages/.\n\n"
-                    "Do NOT include the feature itself, comments, or any explanations.\n\n"
-                    f"{scenario_block}"
-                )
-                step_response = llm.invoke(step_prompt).strip()
+                st.write(f"## `{test_type}` scenarios")
+                for idx, scenario in enumerate(scenarios, start=1):
+                    st.write(f"### Scenario {idx}: {scenario.splitlines()[0]}")
 
-                # Split out each file and write
-                for part in re.split(r"===FILE:", step_response):
-                    part = part.strip()
-                    if not part:
-                        continue
-                    header, code = part.split("===", 1)
-                    rel_path = header.strip()
-                    file_path = output_dir / rel_path
-                    file_path.parent.mkdir(parents=True, exist_ok=True)
-                    file_path.write_text(code.strip(), encoding="utf-8")
+                    # a) append Gherkin
+                    feat_file.write_text(
+                        feat_file.read_text(encoding="utf-8") + scenario + "\n\n"
+                    )
 
-        # --- PLAYWRIGHT + TS + non-BDD -------------------------------------------
-        elif tl == "playwright" and lang == "typescript":
-            test_dir = output_dir / "tests" / "e2e"
-            test_dir.mkdir(parents=True, exist_ok=True)
+                    # b) invoke LLM for this one scenario
+                    with st.spinner(f"Generating code for scenario {idx}…"):
+                        # Generate unique timestamp for this scenario
+                        unique_ts = str(time.time())
+                        files = generate_test_script_with_llm(
+                            llm=llm,
+                            language=selected_lang,
+                            tool=selected_tool,
+                            style=selected_style,
+                            scenario=scenario,
+                            test_type=test_type,
+                            app_url=selected_app_url,
+                            recorder_context=recorder_ctx,
+                            doc_context=doc_ctx,
+                            requirements=reqs,
+                            existing_tests=existing_tests,
+                            timestamp=unique_ts  # Add unique timestamp
+                        )
 
-            for test_type, scenarios in grouped.items():
-                if not scenarios:
-                    continue
+                    # c) process each returned file
+                    for f in files:
+                        path = output_dir / f["path"]
+                        path.parent.mkdir(parents=True, exist_ok=True)
 
-                scenario_block = "\n\n".join(scenarios)
-                spec_prompt = (
-                    "You are a senior SDET.\n"
-                    "Generate ONLY a Playwright TypeScript test spec (no markdown) for these scenarios:\n\n"
-                    f"{scenario_block}"
-                )
-                code = llm.invoke(spec_prompt).strip()
-                (test_dir / f"{test_type}.spec.ts").write_text(code, encoding="utf-8")
+                        # Feature file - already appended above
+                        if f["path"].startswith("features/"):
+                            continue
 
-        # --- FALLBACK: Python / JavaScript / Java / C# ---------------------------
+                        # Step definitions - merge with existing content
+                        elif f["path"].startswith("steps/"):
+                            # Get generated step content
+                            generated_content = f["content"].strip()
+                            st.write(generated_content)
+                            # Merge with existing step content
+                            step_content += "\n\n" + generated_content
+                            continue
+
+                        # POM classes - create only if missing
+                        elif f["path"].startswith("supports/pages/"):
+                            if not path.exists():
+                                path.write_text(f["content"].strip(), encoding="utf-8")
+                            continue
+
+                    st.success(f"✅ Scenario {idx} done.")
+
+                # Remove duplicate imports while preserving step definitions
+                step_content = remove_duplicate_imports(step_content)
+                
+                # Write consolidated step definitions
+                step_file.write_text(step_content, encoding="utf-8")
+                st.sidebar.success(f"`{test_type}` scripts updated.")
+                
+                # Debug: Show step content
+                st.subheader(f"Step Definitions for {test_type}")
+                st.code(step_content)
         else:
-            test_dir = get_test_directory(output_dir, selected_lang)
-            test_dir.mkdir(parents=True, exist_ok=True)
+            st.sidebar.error("Only Playwright + TypeScript + BDD is supported for automation scripts.")
 
-            ext_map = {
-                "python": "py",
-                "javascript": "js",
-                "typescript": "ts",
-                "java": "java",
-                "c#": "cs",
-            }
-            ext = ext_map.get(lang, "txt")
+        st.sidebar.success(f"All scripts generated in {output_dir}")
 
-            for test_type, scenarios in grouped.items():
-                if not scenarios:
-                    continue
 
-                scenario_block = "\n\n".join(scenarios)
-                fallback_prompt = (
-                    "You are a senior SDET.\n"
-                    f"Generate ONLY a {selected_tool} {selected_lang} test script (no markdown) for these scenarios:\n\n"
-                    f"{scenario_block}"
-                )
-                code = llm.invoke(fallback_prompt).strip()
-                (test_dir / f"{test_type}_test.{ext}").write_text(code, encoding="utf-8")
 
-        st.sidebar.success(f"Generated/updated scripts in {output_dir}")
+
+
+
 
 
 
